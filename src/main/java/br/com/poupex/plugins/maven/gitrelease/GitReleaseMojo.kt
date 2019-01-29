@@ -20,7 +20,7 @@ class GitReleaseMojo : AbstractMojo() {
     private lateinit var project: MavenProject
 
     @Parameter
-    private lateinit var increment: Increment
+    private var increment: String = "patch"
 
     @Parameter
     private var dryRun: Boolean = false
@@ -60,9 +60,10 @@ class GitReleaseMojo : AbstractMojo() {
     private fun getReleaseVersion(project: MavenProject): String = try {
         val (major, minor, patch) = project.version.split('.').map(Integer::parseInt)
         when (increment) {
-            MAJOR -> "${major + 1}.$minor.$patch"
-            MINOR -> "$major.${minor + 1}.$patch"
-            PATCH -> "$major.$minor.${patch + 1}"
+            "major" -> "${major + 1}.$minor.$patch"
+            "minor" -> "$major.${minor + 1}.$patch"
+            "patch" -> "$major.$minor.${patch + 1}"
+            else -> throw RuntimeException("No valid increment option valid. Must be major, minor or patch.")
         }
     } catch (e: NumberFormatException) {
         throw RuntimeException("Error while parsing project version: invalid number(s).")
