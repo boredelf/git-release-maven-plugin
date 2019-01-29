@@ -6,8 +6,9 @@ import org.apache.maven.plugin.AbstractMojo
 import org.apache.maven.plugins.annotations.Mojo
 import org.apache.maven.plugins.annotations.Parameter
 import org.apache.maven.project.MavenProject
-import org.eclipse.jgit.lib.PersonIdent
-import java.io.File
+import org.apache.maven.settings.Server
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
+import java.net.URI
 
 @Mojo(name = "execute")
 class GitReleaseMojo : AbstractMojo() {
@@ -19,13 +20,13 @@ class GitReleaseMojo : AbstractMojo() {
     private lateinit var project: MavenProject
 
     @Parameter
+    private lateinit var increment: Increment
+
+    @Parameter
     private var dryRun: Boolean = false
 
     @Parameter
     private var tagOnly: Boolean = false
-
-    @Parameter
-    private var increment: Increment = PATCH
 
     private val repo = GitRepo()
 
@@ -41,14 +42,20 @@ class GitReleaseMojo : AbstractMojo() {
          */
         assertRepoIsOK(repo)
 
-        val releaseVersion = if (!tagOnly) getReleaseVersion(project) else project.version
-        PomHandler.updateVersion(to = releaseVersion, on = File(project.basedir, "pom.xml"))
-
-        val jenkins = PersonIdent("jenkins", "jenkins@poupex.com.br")
-        repo.commit("pom.xml", jenkins, "Release $releaseVersion")
-        val tag = repo.tag(tagger = jenkins, name = releaseVersion)
-//        repo.push(tag)
+//        val releaseVersion = if (!tagOnly) getReleaseVersion(project) else project.version
+//        PomHandler.updateVersion(to = releaseVersion, on = File(project.basedir, "pom.xml"))
+//
+//        repo.commit("pom.xml", "Release $releaseVersion")
+//        val tag = repo.tag(releaseVersion)
+//        repo.push(tag, getRepositoryCredentials(project.scm.developerConnection, session.settings.servers))
     }
+
+    private fun getRepositoryCredentials(repoUri: String, servers: List<Server>) =
+        URI.create(repoUri.replace("scm:git:", "")).host.let { repoUrl ->
+            servers.find { server -> server.id == repoUrl }.let { server ->
+                UsernamePasswordCredentialsProvider(server?.username, server?.password)
+            }
+        }
 
     private fun getReleaseVersion(project: MavenProject): String = try {
         val (major, minor, patch) = project.version.split('.').map(Integer::parseInt)
