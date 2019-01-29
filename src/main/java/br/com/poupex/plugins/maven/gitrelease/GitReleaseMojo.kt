@@ -1,84 +1,75 @@
 package br.com.poupex.plugins.maven.gitrelease
 
 import br.com.poupex.plugins.maven.gitrelease.Increment.*
-import org.apache.maven.execution.MavenSession
 import org.apache.maven.plugin.AbstractMojo
+import org.apache.maven.plugin.MojoFailureException
 import org.apache.maven.plugins.annotations.Mojo
 import org.apache.maven.plugins.annotations.Parameter
 import org.apache.maven.project.MavenProject
 import org.apache.maven.settings.Server
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
-import java.net.URI
+import java.io.File
 
 @Mojo(name = "execute")
 class GitReleaseMojo : AbstractMojo() {
 
-    @Parameter(defaultValue = "\${session}", readonly = true)
-    private lateinit var session: MavenSession
-
     @Parameter(defaultValue = "\${project}", readonly = true)
-    private lateinit var project: MavenProject
+    lateinit var project: MavenProject
 
-    @Parameter
-    private var increment: String = "patch"
+    @Parameter(defaultValue = "\${project.scm.developerConnection}", readonly = true)
+    var repoUri: String = ""
 
-    @Parameter
-    private var dryRun: Boolean = false
+    @Parameter(defaultValue = "\${session.settings.servers}", readonly = true)
+    var servers: List<Server> = emptyList()
 
-    @Parameter
-    private var tagOnly: Boolean = false
+    @Parameter(property = "increment")
+    var increment: String = "patch"
 
-    private val repo = GitRepo()
+    @Parameter(property = "tagOnly")
+    var tagOnly: Boolean = false
 
-    override fun execute() {
-        /*
-        - Check if the repo has a remote
-        - Check if it's clean (possible stash changes?)
-        - Read poms
-        - Only increment if desiresable
-            - Increment version (could use parameters like increment="major|minor|patch(default)")
-        - Commit and push poms (tag)
-        - !!! Use server id to authenticate
-         */
-        assertRepoIsOK(repo)
+    override fun execute() = GitRepo().use { repo ->
+        log.info("Checking for issues before the release...")
+        GitReleaseMojoRequirements.inspect(repo, repoUri, servers).let { issues ->
+            if (issues.isNotEmpty()) {
+                issues.forEach(log::error)
+                throw MojoFailureException("There are issues with the project. Resolve them and try again.")
+            }
+        }
 
-//        val releaseVersion = if (!tagOnly) getReleaseVersion(project) else project.version
-//        PomHandler.updateVersion(to = releaseVersion, on = File(project.basedir, "pom.xml"))
-//
-//        repo.commit("pom.xml", "Release $releaseVersion")
-//        val tag = repo.tag(releaseVersion)
-//        repo.push(tag, getRepositoryCredentials(project.scm.developerConnection, session.settings.servers))
+        val releaseVersion = if (tagOnly) {
+            log.info("Tag only: skipping version bumping...")
+            project.version
+        } else getReleaseVersion(project).apply {
+            log.info("Bumping version to $this...")
+            PomHandler.updateVersion(to = this, on = File(project.basedir, "pom.xml"))
+            log.info("Committing changes...")
+            repo.commit("pom.xml", "Release $this")
+        }
+
+        log.info("Tagging release...")
+        val tag = repo.tag(releaseVersion)
+        log.info("Pushing changes to remote...")
+        repo.push(tag, getRepositoryCredentials(repoUri, servers))
+        log.info("All done.")
     }
 
     private fun getRepositoryCredentials(repoUri: String, servers: List<Server>) =
-        URI.create(repoUri.replace("scm:git:", "")).host.let { repoUrl ->
-            servers.find { server -> server.id == repoUrl }.let { server ->
+        Uri.getHost(repoUri).let { host ->
+            servers.find { server -> server.id == host }.let { server ->
                 UsernamePasswordCredentialsProvider(server?.username, server?.password)
             }
         }
 
     private fun getReleaseVersion(project: MavenProject): String = try {
         val (major, minor, patch) = project.version.split('.').map(Integer::parseInt)
-        when (increment) {
-            "major" -> "${major + 1}.$minor.$patch"
-            "minor" -> "$major.${minor + 1}.$patch"
-            "patch" -> "$major.$minor.${patch + 1}"
-            else -> throw RuntimeException("No valid increment option valid. Must be major, minor or patch.")
+        when (Increment.from(increment)) {
+            MAJOR -> "${major + 1}.0.0"
+            MINOR -> "$major.${minor + 1}.0"
+            PATCH -> "$major.$minor.${patch + 1}"
         }
     } catch (e: NumberFormatException) {
         throw RuntimeException("Error while parsing project version: invalid number(s).")
-    }
-
-    private fun assertRepoIsOK(repo: GitRepo) = mutableListOf<String>().apply {
-        if (!repo.hasRemote()) {
-            add("The repository doesn't appear to have a remote.")
-        }
-        if (!repo.isClean()) {
-            add("The repository must be clean before release.")
-        }
-        if (isNotEmpty()) {
-            throw RuntimeException("The release couldn't be executed. Issues:\n" + joinToString("\n"))
-        }
     }
 
 }
