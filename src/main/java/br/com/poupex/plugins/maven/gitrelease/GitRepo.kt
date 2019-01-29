@@ -3,10 +3,14 @@ package br.com.poupex.plugins.maven.gitrelease
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.PersonIdent
 import org.eclipse.jgit.lib.Ref
+import org.eclipse.jgit.transport.CredentialsProvider
 import java.io.File
 
 
 class GitRepo {
+
+    // TODO
+    private val credentialsProvider = CredentialsProvider.getDefault()
 
     private val repo: Git = try {
         Git.open(File("."))
@@ -40,7 +44,7 @@ class GitRepo {
     }
 
     fun push(tag: Ref) = try {
-        repo.push().add(tag.target).add(tag).call()
+        repo.push().setCredentialsProvider(credentialsProvider).add(tag.target).add(tag).call()
     } catch (e: Exception) {
         throw RuntimeException("Couldn't push changes.", e)
     }
