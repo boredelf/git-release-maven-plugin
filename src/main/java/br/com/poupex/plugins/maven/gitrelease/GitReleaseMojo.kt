@@ -6,12 +6,8 @@ import org.apache.maven.plugin.AbstractMojo
 import org.apache.maven.plugins.annotations.Mojo
 import org.apache.maven.plugins.annotations.Parameter
 import org.apache.maven.project.MavenProject
-import org.apache.maven.shared.utils.xml.Xpp3DomBuilder
-import org.apache.maven.shared.utils.xml.Xpp3DomWriter
 import org.eclipse.jgit.lib.PersonIdent
 import java.io.File
-import java.io.FileReader
-import java.io.FileWriter
 
 @Mojo(name = "execute")
 class GitReleaseMojo : AbstractMojo() {
@@ -77,9 +73,4 @@ class GitReleaseMojo : AbstractMojo() {
         }
     }
 
-}
-
-fun main() = Xpp3DomBuilder.build(FileReader(File("pom.xml"))).let {
-    it.getChild("version").value = "2.0.0"
-    Xpp3DomWriter.write(FileWriter(File("pom.new.xml")), it)
 }
