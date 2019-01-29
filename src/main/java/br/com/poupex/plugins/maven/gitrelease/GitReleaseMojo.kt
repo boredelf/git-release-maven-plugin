@@ -7,9 +7,11 @@ import org.apache.maven.plugins.annotations.Mojo
 import org.apache.maven.plugins.annotations.Parameter
 import org.apache.maven.project.MavenProject
 import org.apache.maven.shared.utils.xml.Xpp3DomBuilder
+import org.apache.maven.shared.utils.xml.Xpp3DomWriter
 import org.eclipse.jgit.lib.PersonIdent
 import java.io.File
 import java.io.FileReader
+import java.io.FileWriter
 
 @Mojo(name = "execute")
 class GitReleaseMojo : AbstractMojo() {
@@ -41,18 +43,15 @@ class GitReleaseMojo : AbstractMojo() {
         - Commit and push poms (tag)
         - !!! Use server id to authenticate
          */
-        val issues = checkForIssues(repo)
-        if (issues.isNotEmpty()) {
-            throw RuntimeException("The release couldn't be executed. Issues: " + issues.joinToString("\n"))
-        }
+        assertRepoIsOK(repo)
 
-        // Get pom
-        val pom = Xpp3DomBuilder.build(FileReader(File(project.basedir, "pom.xml")))
-        pom.get // TODO
         val releaseVersion = if (!tagOnly) getReleaseVersion(project) else project.version
+        PomHandler.updateVersion(to = releaseVersion, on = File(project.basedir, "pom.xml"))
 
         val jenkins = PersonIdent("jenkins", "jenkins@poupex.com.br")
-        repo.tag(tagger = jenkins, name = releaseVersion)
+        repo.commit("pom.xml", jenkins, "Release $releaseVersion")
+        val tag = repo.tag(tagger = jenkins, name = releaseVersion)
+//        repo.push(tag)
     }
 
     private fun getReleaseVersion(project: MavenProject): String = try {
@@ -66,13 +65,21 @@ class GitReleaseMojo : AbstractMojo() {
         throw RuntimeException("Error while parsing project version: invalid number(s).")
     }
 
-    private fun checkForIssues(repo: GitRepo) = mutableListOf<String>().apply {
+    private fun assertRepoIsOK(repo: GitRepo) = mutableListOf<String>().apply {
         if (!repo.hasRemote()) {
             add("The repository doesn't appear to have a remote.")
         }
         if (!repo.isClean()) {
             add("The repository must be clean before release.")
         }
+        if (isNotEmpty()) {
+            throw RuntimeException("The release couldn't be executed. Issues:\n" + joinToString("\n"))
+        }
     }
 
+}
+
+fun main() = Xpp3DomBuilder.build(FileReader(File("pom.xml"))).let {
+    it.getChild("version").value = "2.0.0"
+    Xpp3DomWriter.write(FileWriter(File("pom.new.xml")), it)
 }
